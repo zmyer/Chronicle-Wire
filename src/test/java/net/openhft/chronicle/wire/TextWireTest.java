@@ -233,6 +233,37 @@ public class TextWireTest {
     }
 
     @Test
+    public void testFailingBool() {
+        @NotNull Wire wire = createWire();
+
+        wire.write(() -> "A").text("");
+        wire.write(() -> "B").text("other");
+        assertEquals("A: \"\"\n" +
+                "B: other\n", wire.toString());
+        @NotNull String expected = "{A=, B=other}";
+        expectWithSnakeYaml(expected, wire);
+
+        assertEquals(false, wire.read(() -> "A").bool());
+        assertEquals(false, wire.read(() -> "B").bool());
+    }
+
+    @Test
+    public void testFailingBoolean() {
+        @NotNull Wire wire = createWire();
+
+        wire.write(() -> "A").text("");
+        wire.write(() -> "B").text("other");
+        assertEquals("A: \"\"\n" +
+                "B: other\n", wire.toString());
+        @NotNull String expected = "{A=, B=other}";
+        expectWithSnakeYaml(expected, wire);
+
+        // TODO fix.
+//        assertEquals(null, wire.read(() -> "A").object(Boolean.class));
+        assertEquals(false, wire.read(() -> "B").object(Boolean.class));
+    }
+
+    @Test
     public void testLeadingSpace() {
         @NotNull Wire wire = createWire();
         wire.write().text(" leadingspace");
@@ -1089,7 +1120,8 @@ public class TextWireTest {
                 "  message: Reference cannot be null,\n" +
                 "  stackTrace: [\n" +
                 "    { class: net.openhft.chronicle.wire.TextWireTest, method: testException, file: TextWireTest.java, line: 783 },\n" +
-                "    { class: net.openhft.chronicle.wire.TextWireTest, method: runTestException, file: TextWireTest.java, line: 73 }\n" +
+                "    { class: net.openhft.chronicle.wire.TextWireTest, method: runTestException, file: TextWireTest.java, line: 73 },\n" +
+                "    { class: sun.reflect.NativeMethodAccessorImpl, method: invoke0, file: NativeMethodAccessorImpl.java, line: -2 }\n" +
                 "  ]\n" +
                 "}\n", Wires.fromSizePrefixedBlobs(bytes));
 

@@ -55,6 +55,7 @@ public class VanillaMethodReader implements MethodReader {
     private final MarshallableIn in;
     @NotNull
     private final WireParser wireParser;
+    private final MessageHistory messageHistory = MessageHistory.get();
     private boolean closeIn = false, closed;
     private MethodReaderInterceptor methodReaderInterceptor;
 
@@ -127,7 +128,7 @@ public class VanillaMethodReader implements MethodReader {
             }
         }
         if (wireParser.lookup(HISTORY) == null) {
-            wireParser.registerOnce(() -> HISTORY, (s, v) -> v.marshallable(MessageHistory.get()));
+            wireParser.registerOnce(() -> HISTORY, (s, v) -> v.marshallable(messageHistory));
         }
     }
 
@@ -377,41 +378,86 @@ public class VanillaMethodReader implements MethodReader {
      * @return true if there was a message, or false if no more data is available.
      */
     public boolean readOne() {
-        for (; ; ) {
 
+
+        try (DocumentContext context = in.readingDocument()) {
+            if (context.isData()) {
+                messageHistory.reset(context.sourceId(), context.index());
+                wireParser.accept(context.wire());
+                return true;
+            }
+
+            if (context.isPresent() && (readOneMetaData(context)))
+                return true;
+        }
+
+        return readOneLoop();
+    }
+
+    private boolean readOneLoop() {
+        for (; ; ) {
             try (DocumentContext context = in.readingDocument()) {
                 if (!context.isPresent())
                     return false;
-                if (context.isMetaData()) {
-                    StringBuilder sb = Wires.acquireStringBuilder();
+                if (context.isMetaData())
+                    if (readOneMetaData(context))
+                        return true;
+                    else
+                        continue;
 
-                    long r = context.wire().bytes().readPosition();
-                    try {
-                        context.wire().readEventName(sb);
+                assert context.isData();
 
-                        for (String s : metaIgnoreList) {
-                            // we wish to ignore our system meta data field
-                            if (s.contentEquals(sb))
-                                return false;
-                        }
-                    } finally {
-                        // roll back position to where is was before we read the SB
-                        context.wire().bytes().readPosition(r);
-                    }
-
-                    wireParser.accept(context.wire());
-
-                    return true;
-                }
-                if (!context.isData())
-                    continue;
-                MessageHistory history = MessageHistory.get();
-                history.reset(context.sourceId(), context.index());
+                messageHistory.reset(context.sourceId(), context.index());
                 wireParser.accept(context.wire());
             }
             return true;
         }
+    }
 
+    @Override
+    public boolean lazyReadOne() {
+        if (!in.peekDocument()) {
+            return false;
+        }
+
+        return lazyReadOne0();
+    }
+
+    private boolean lazyReadOne0() {
+        try (DocumentContext context = in.readingDocument()) {
+            if (!context.isPresent()) {
+                return false;
+            }
+            if (context.isMetaData()) {
+                readOneMetaData(context);
+                return true;
+            }
+            assert context.isData();
+
+            messageHistory.reset(context.sourceId(), context.index());
+            wireParser.accept(context.wire());
+        }
+        return true;
+    }
+
+    private boolean readOneMetaData(DocumentContext context) {
+        StringBuilder sb = Wires.acquireStringBuilder();
+
+        Wire wire = context.wire();
+        Bytes<?> bytes = wire.bytes();
+        long r = bytes.readPosition();
+        wire.readEventName(sb);
+
+        for (String s : metaIgnoreList) {
+            // we wish to ignore our system meta data field
+            if (s.contentEquals(sb))
+                return false;
+        }
+
+        // roll back position to where is was before we read the SB
+        bytes.readPosition(r);
+        wireParser.accept(wire);
+        return true;
     }
 
     @Override

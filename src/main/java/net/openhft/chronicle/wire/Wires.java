@@ -107,6 +107,7 @@ public enum Wires {
         WireInternal.addAliases();
     }
 
+    @Deprecated(/*to be removed?*/)
     @Nullable
     public static <T> T read(@NotNull Class<T> tClass, ValueIn in) {
         final SerializationStrategy<T> strategy = CLASS_STRATEGY.get(tClass);
@@ -494,7 +495,9 @@ public enum Wires {
 
             case NONE:
                 @NotNull final Object e = strategy.readUsing(using, in);
-                return clazz == Base64.class ? (E) e : (E) ObjectUtils.convertTo(clazz, e);
+                return clazz == Base64.class
+                        ? (E) e
+                        : (E) ObjectUtils.convertTo(clazz, e);
 
             default:
                 throw new AssertionError();

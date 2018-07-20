@@ -344,6 +344,18 @@ public class TextWire extends AbstractWire implements Wire {
         return sb;
     }
 
+    private static void checkConsecutiveSpaces(@NotNull StringBuilder sb) {
+        if (sb.length() == 0)
+            return;
+        char lastCh = sb.charAt(0);
+        for (int i = 1; i < sb.length() - 1; i++) {
+            char ch2 = sb.charAt(i);
+            if (lastCh <= ' ' && ch2 <= ' ')
+                throw new IORuntimeException("Cannot have multiple consecutive spaces in a field name '" + sb + "'");
+            lastCh = ch2;
+        }
+    }
+
     @NotNull
     protected StringBuilder readField(@NotNull StringBuilder sb) {
         consumePadding();
@@ -390,6 +402,8 @@ public class TextWire extends AbstractWire implements Wire {
                 parseUntil(sb, getEscapingEndOfText());
             }
             unescape(sb);
+            // check no consecutive spaces.
+            checkConsecutiveSpaces(sb);
         } catch (BufferUnderflowException e) {
             Jvm.debug().on(getClass(), e);
         }
@@ -2150,8 +2164,10 @@ public class TextWire extends AbstractWire implements Wire {
                 default: {
                     final long rem = bytes.readRemaining();
                     if (rem > 0) {
-                        if (a instanceof Bytes || use8bit) {
-                            bytes.parse8bit(a, getStrictEscapingEndOfText());
+                        if (a instanceof Bytes) {
+                            bytes.parse8bit((Bytes) a, getStrictEscapingEndOfText());
+                        } else if (use8bit) {
+                            bytes.parse8bit((StringBuilder) a, getStrictEscapingEndOfText());
                         } else {
                             bytes.parseUtf8(a, getStrictEscapingEndOfText());
                         }
@@ -2879,6 +2895,8 @@ public class TextWire extends AbstractWire implements Wire {
                 bytes.readSkip(-1);
                 try {
                     return classLookup().forName(sb);
+                } catch (NoClassDefFoundError e) {
+                    throw new IORuntimeException("Unable to load class " + e, e);
                 } catch (ClassNotFoundException e) {
                     return Wires.tupleFor(tClass, sb.toString());
                 }
@@ -3122,7 +3140,12 @@ public class TextWire extends AbstractWire implements Wire {
             if (textTo(sb) == null)
                 throw new NullPointerException("value is null");
 
-            return ObjectUtils.isTrue(sb);
+            if (ObjectUtils.isTrue(sb))
+                return true;
+            if (ObjectUtils.isFalse(sb))
+                return false;
+            Jvm.debug().on(getClass(), "Unable to parse '" + sb + "' as a boolean flag, assuming false");
+            return false;
         }
 
         @Override
